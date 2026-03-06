@@ -131,7 +131,13 @@
               </el-form-item>
 
               <el-form-item label="签订日期" prop="date">
-                <el-date-picker v-model="state.base.date" type="date" style="width:100%"></el-date-picker>
+                <el-date-picker
+                  v-model="state.base.date"
+                  type="date"
+                  format="YYYY-MM-DD"
+                  value-format="YYYY-MM-DD"
+                  style="width:100%"
+                ></el-date-picker>
               </el-form-item>
             </el-form>
           </section>

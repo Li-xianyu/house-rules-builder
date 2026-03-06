@@ -223,66 +223,6 @@ function buildDocText(state){
 	return lines.join("\n");
 }
 
-function wrapTextByWidth(rawLine, maxWidth, font, fontSize){
-	const line = String(rawLine || "");
-	if(!line) return [""];
-
-	const m = line.match(/^(\s+)(.*)$/);
-	const indentStr = m ? m[1] : "";
-	const content = m ? m[2] : line;
-
-	if(!content) return [indentStr];
-
-	const out = [];
-	let s = content;
-
-	const preferBreakChars = [" ", "，", "。", "；", "、", ",", ".", ";", "：", "！", "？", "）", "】", "」", "》"];
-
-	function textWidth(t){
-		return font.widthOfTextAtSize(t, fontSize);
-	}
-
-	while(s.length){
-		const full = indentStr + s;
-		if(textWidth(full) <= maxWidth){
-			out.push(full);
-			break;
-		}
-
-		let lo = 1;
-		let hi = s.length;
-		let best = 1;
-
-		while(lo <= hi){
-			const mid = (lo + hi) >> 1;
-			const candidate = indentStr + s.slice(0, mid);
-			if(textWidth(candidate) <= maxWidth){
-				best = mid;
-				lo = mid + 1;
-			}else{
-				hi = mid - 1;
-			}
-		}
-
-		let cut = best;
-
-		const slice = s.slice(0, cut);
-		let breakAt = -1;
-		for(let i = slice.length - 1; i >= Math.max(0, slice.length - 24); i--){
-			if(preferBreakChars.includes(slice[i])){
-				breakAt = i + 1;
-				break;
-			}
-		}
-		if(breakAt >= 10) cut = breakAt;
-
-		out.push(indentStr + s.slice(0, cut).trimEnd());
-		s = s.slice(cut).trimStart();
-	}
-
-	return out;
-}
-
 function isSectionHeader(line){
 	return /^[一二三四五六七八九十]+、/.test(line.trim());
 }
@@ -313,6 +253,90 @@ function isListItem(line){
 	return /^\s*[-•]\s+/.test(line);
 }
 
+function formatDateValue(v){
+	if(!v) return "";
+
+	if(typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.trim())){
+		return v.trim();
+	}
+
+	const d = v instanceof Date ? v : new Date(v);
+	if(Number.isNaN(d.getTime())){
+		return String(v).trim();
+	}
+
+	const y = d.getFullYear();
+	const m = String(d.getMonth() + 1).padStart(2, "0");
+	const day = String(d.getDate()).padStart(2, "0");
+	return `${y}-${m}-${day}`;
+}
+
+function splitIndent(line){
+	const m = String(line || "").match(/^(\s+)(.*)$/);
+	const indentStr = m ? m[1] : "";
+	const content = m ? m[2] : String(line || "");
+	const indentLevel = Math.floor(indentStr.length / 2);
+	return {
+		indentStr,
+		content,
+		indentLevel
+	};
+}
+
+function wrapTextByWidth(rawLine, maxWidth, font, fontSize, measureTextWidth){
+	const line = String(rawLine || "");
+	if(!line) return [""];
+
+	const { indentStr, content } = splitIndent(line);
+
+	if(!content) return [indentStr];
+
+	const out = [];
+	let s = content;
+
+	const preferBreakChars = [" ", "，", "。", "；", "、", ",", ".", ";", "：", "！", "？", "）", "】", "」", "》"];
+
+	while(s.length){
+		const full = indentStr + s;
+		if(measureTextWidth(full, font, fontSize) <= maxWidth){
+			out.push(full);
+			break;
+		}
+
+		let lo = 1;
+		let hi = s.length;
+		let best = 1;
+
+		while(lo <= hi){
+			const mid = (lo + hi) >> 1;
+			const candidate = indentStr + s.slice(0, mid);
+			if(measureTextWidth(candidate, font, fontSize) <= maxWidth){
+				best = mid;
+				lo = mid + 1;
+			}else{
+				hi = mid - 1;
+			}
+		}
+
+		let cut = best;
+
+		const slice = s.slice(0, cut);
+		let breakAt = -1;
+		for(let i = slice.length - 1; i >= Math.max(0, slice.length - 24); i--){
+			if(preferBreakChars.includes(slice[i])){
+				breakAt = i + 1;
+				break;
+			}
+		}
+		if(breakAt >= 10) cut = breakAt;
+
+		out.push(indentStr + s.slice(0, cut).trimEnd());
+		s = s.slice(cut).trimStart();
+	}
+
+	return out;
+}
+
 export async function makePdfBytes(state){
 	const doc = await PDFDocument.create();
 	doc.registerFontkit(fontkit);
@@ -339,6 +363,21 @@ export async function makePdfBytes(state){
 	const ink = rgb(0.10, 0.12, 0.14);
 	const inkLight = rgb(0.35, 0.37, 0.40);
 
+	// 文本宽度测量缓存
+	const widthCache = new Map();
+
+	function fontKeyOf(f){
+		return f === fontBold ? "b" : "r";
+	}
+
+	function measureTextWidth(text, f, size){
+		const key = `${fontKeyOf(f)}|${size}|${text}`;
+		if(widthCache.has(key)) return widthCache.get(key);
+		const w = f.widthOfTextAtSize(text, size);
+		widthCache.set(key, w);
+		return w;
+	}
+
 	let page = doc.addPage([pageW, pageH]);
 	const pages = [page];
 
@@ -346,7 +385,7 @@ export async function makePdfBytes(state){
 	const titleSize = 20;
 	const titleY = pageH - marginTop;
 
-	const titleW = fontBold.widthOfTextAtSize(title, titleSize);
+	const titleW = measureTextWidth(title, fontBold, titleSize);
 	page.drawText(title, {
 		x: (pageW - titleW) / 2,
 		y: titleY - titleSize,
@@ -355,9 +394,10 @@ export async function makePdfBytes(state){
 		color: ink
 	});
 
-	const dateLine = `（签订日期：${state.base?.date || ""}）`;
+	const dateText = formatDateValue(state.base?.date);
+	const dateLine = `（签订日期：${dateText}）`;
 	const dateSize = 10;
-	const dateW = font.widthOfTextAtSize(dateLine, dateSize);
+	const dateW = measureTextWidth(dateLine, font, dateSize);
 	page.drawText(dateLine, {
 		x: (pageW - dateW) / 2,
 		y: titleY - titleSize - 18,
@@ -388,55 +428,70 @@ export async function makePdfBytes(state){
 		return { font, size: bodySize };
 	}
 
-	function indentXFor(rawLine){
-		const m = rawLine.match(/^(\s+)(.*)$/);
-		const indentSpaces = m ? m[1].length : 0;
-		const indentLevel = Math.floor(indentSpaces / 2);
+	function indentXFromLevel(indentLevel){
 		return marginX + indentLevel * 12;
 	}
 
-	function wrapForCurrentPage(rawLine){
-		const st = styleFor(rawLine);
-		const x = indentXFor(rawLine);
-		const maxW = pageW - x - marginX;
-		return wrapTextByWidth(rawLine, maxW, st.font, st.size);
-	}
+	// 先构造正文
+	const text = buildDocText(state);
+	const rawLines = String(text || "").split("\n");
 
-	function countLinesForWrapped(wrapped){
-		return Math.max(1, wrapped.length);
-	}
+	// 预排版缓存：避免主循环、keepNext、绘制阶段来回重复 wrap
+	const preparedLines = rawLines.map(raw => {
+		const trimmed = raw.trim();
+
+		if(!trimmed){
+			return {
+				raw,
+				empty: true,
+				style: null,
+				keepNext: 0,
+				indentLevel: 0,
+				wrapped: [],
+				lineCount: 1
+			};
+		}
+
+		const style = styleFor(raw);
+		const keepNext = keepNextCountFor(raw);
+		const { indentLevel } = splitIndent(raw);
+		const indentX = indentXFromLevel(indentLevel);
+		const maxW = pageW - indentX - marginX;
+		const wrapped = wrapTextByWidth(raw, maxW, style.font, style.size, measureTextWidth);
+
+		return {
+			raw,
+			empty: false,
+			style,
+			keepNext,
+			indentLevel,
+			wrapped,
+			lineCount: Math.max(1, wrapped.length)
+		};
+	});
 
 	function remainingLinesOnPage(){
 		return Math.floor((y - marginBottom) / lineH);
 	}
 
-	const text = buildDocText(state);
-	const rawLines = String(text || "").split("\n");
+	for(let i = 0; i < preparedLines.length; i++){
+		const current = preparedLines[i];
 
-	for(let i = 0; i < rawLines.length; i++){
-		const raw = rawLines[i];
-
-		if(!raw.trim()){
+		if(current.empty){
 			if(y < marginBottom + lineH) newPage();
 			y -= lineH;
 			continue;
 		}
 
-		const st = styleFor(raw);
-		const wrapped = wrapForCurrentPage(raw);
-		const need = countLinesForWrapped(wrapped);
+		const need = current.lineCount;
 
 		let keepNeed = 0;
-		const keepNext = keepNextCountFor(raw);
-
-		if(keepNext > 0){
+		if(current.keepNext > 0){
 			let got = 0;
-			for(let j = i + 1; j < rawLines.length && got < keepNext; j++){
-				const nx = rawLines[j];
-				if(!nx.trim()) continue;
-
-				const nWrapped = wrapForCurrentPage(nx);
-				keepNeed += countLinesForWrapped(nWrapped);
+			for(let j = i + 1; j < preparedLines.length && got < current.keepNext; j++){
+				const nextItem = preparedLines[j];
+				if(nextItem.empty) continue;
+				keepNeed += nextItem.lineCount;
 				got++;
 			}
 		}
@@ -445,20 +500,17 @@ export async function makePdfBytes(state){
 			newPage();
 		}
 
-		for(const wl of wrapped){
+		for(const wl of current.wrapped){
 			if(y < marginBottom + lineH) newPage();
 
-			const mm = wl.match(/^(\s+)(.*)$/);
-			const spaces = mm ? mm[1].length : 0;
-			const level = Math.floor(spaces / 2);
-			const x = marginX + level * 12;
-			const content = mm ? mm[2] : wl;
+			const { indentLevel, content } = splitIndent(wl);
+			const x = indentXFromLevel(indentLevel);
 
 			page.drawText(content, {
 				x,
-				y: y - st.size,
-				size: st.size,
-				font: st.font,
+				y: y - current.style.size,
+				size: current.style.size,
+				font: current.style.font,
 				color: ink
 			});
 			y -= lineH;
@@ -468,7 +520,7 @@ export async function makePdfBytes(state){
 	const pageNumSize = 9;
 	for(let p = 0; p < pages.length; p++){
 		const label = `- ${p + 1} -`;
-		const w = font.widthOfTextAtSize(label, pageNumSize);
+		const w = measureTextWidth(label, font, pageNumSize);
 		pages[p].drawText(label, {
 			x: (pageW - w) / 2,
 			y: 18,
