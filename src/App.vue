@@ -464,6 +464,12 @@ import PdfPreview from "./components/PdfPreview.vue";
 import { makePdfBytes } from "./utils/pdf";
 import { exportJsonFile, getDraft, setDraft, clearDraft as clearDraftLocal } from "./utils/storage";
 
+const track = (event, data = {}) => {
+    if (window.umami && typeof window.umami.track === "function") {
+        window.umami.track(event, data);
+    }
+};
+
 function uid(){
   return "id_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
 }
@@ -744,6 +750,7 @@ function confirmAddCategory(){
   state.categories.push({ id: uid(), title, rules: [] });
   activeCatIndex.value = state.categories.length - 1;
   catDialog.visible = false;
+  track("add_category", { title });
   ElMessage.success("已新增类别");
 }
 function removeCategory(i){
@@ -804,9 +811,11 @@ function confirmRule(){
   const rulesArr = state.categories[activeCatIndex.value].rules;
   if(ruleDialog.editIndex > -1){
     rulesArr[ruleDialog.editIndex] = JSON.parse(JSON.stringify(f));
+    track("edit_rule");
     ElMessage.success("已更新条款");
   }else{
     rulesArr.push(JSON.parse(JSON.stringify(f)));
+    track("add_rule");
     ElMessage.success("已新增条款");
   }
   ruleDialog.visible = false;
@@ -902,6 +911,9 @@ const previewPanelRef = ref(null);
 async function previewPdf(){
   const ok = await buildPdf({ strict:false, toast:false });
   if(!ok) return;
+
+  track("preview_pdf");
+
   // 手机端：点预览就滚到预览区
   if(!isDesktop.value){
     await nextTick();
@@ -922,6 +934,7 @@ watch(state, ()=>{
 
 function downloadPdf(){
   if(!pdfBytesCache){ ElMessage.warning("先生成 PDF"); return; }
+  track("download_pdf");
   const blob = new Blob([pdfBytesCache], {type:"application/pdf"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -979,6 +992,7 @@ function prev(){ if(active.value>0) active.value--; }
 // draft/export
 function saveDraft(){
   setDraft(DRAFT_KEY, JSON.parse(JSON.stringify(state)));
+  track("save_draft");
   ElMessage.success("草稿已保存（本地）");
 }
 function loadDraft(){
@@ -986,6 +1000,7 @@ function loadDraft(){
   if(!obj){ ElMessage.warning("没有找到草稿"); return; }
   Object.assign(state, obj);
   activeCatIndex.value = state.categories.length ? 0 : -1;
+  track("load_draft");
   ElMessage.success("草稿已加载");
 }
 function clearDraft(){
@@ -1038,6 +1053,7 @@ async function importJson(){
 }
 
 function exportJson(){
+  track("export_json");
   exportJsonFile("rules-contract-backup.json", state);
 }
 
