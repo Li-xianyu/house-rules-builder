@@ -31,25 +31,20 @@ async function getBoldBytes(){
 }
 
 function linesToArray(s){
-	return String(s||"")
+	return String(s || "")
 		.split(/\r?\n/)
-		.map(x=>x.trim())
+		.map(x => x.trim())
 		.filter(Boolean);
 }
-
 
 function cnNum(n){
 	const map = ["零","一","二","三","四","五","六","七","八","九","十"];
 	if(n <= 10) return map[n];
-	const tens = Math.floor(n/10);
-	const ones = n%10;
-	if(tens === 1) return "十" + (ones?map[ones]:"");
-	return map[tens] + "十" + (ones?map[ones]:"");
+	const tens = Math.floor(n / 10);
+	const ones = n % 10;
+	if(tens === 1) return "十" + (ones ? map[ones] : "");
+	return map[tens] + "十" + (ones ? map[ones] : "");
 }
-
-
-
-
 
 function buildDocText(state){
 	const mode = String(state.mode || "solo");
@@ -60,29 +55,31 @@ function buildDocText(state){
 
 	const lines = [];
 
-	
-	if(state.base?.date) lines.push(`签订日期：${state.base.date}`);
+	// 这里不再输出“签订日期”，因为页头已经有了，避免重复
 	if(A) lines.push(`${labelA}：${A}`);
 	if(B) lines.push(`${labelB}：${B}`);
 	if(lines.length) lines.push("");
 
 	const sections = [];
 
-	
+	// 一、原则与安全
 	{
 		const s = [];
-		if(state.base?.safeword) s.push(`安全词：${state.base.safeword}`);
+
+		if(state.base?.safeword){
+			s.push(`安全词：${state.base.safeword}`);
+		}
 
 		const hard = linesToArray(state.base?.hardLimitsText);
 		if(hard.length){
 			s.push("硬性边界：");
-			hard.forEach((x,i)=> s.push(`  (${i+1}) ${x}`));
+			hard.forEach((x, i) => s.push(`  (${i + 1}) ${x}`));
 		}
 
 		const ac = (state.base?.aftercare || []).filter(Boolean);
 		if(ac.length){
 			s.push("关怀与复盘：");
-			ac.forEach((x,i)=> s.push(`  (${i+1}) ${x}`));
+			ac.forEach((x, i) => s.push(`  (${i + 1}) ${x}`));
 		}
 
 		if(state.base?.sscAccepted){
@@ -90,44 +87,44 @@ function buildDocText(state){
 		}
 
 		if(s.length){
-			sections.push({ title:"原则与安全", lines:s });
+			sections.push({ title: "原则与安全", lines: s });
 		}
 	}
 
-	
+	// 二、家规条款
 	{
 		const s = [];
 		let catNo = 0;
 
-		(state.categories || []).forEach(cat=>{
-			const rules = (cat.rules || []).filter(r => r && String(r.desc||"").trim());
+		(state.categories || []).forEach(cat => {
+			const rules = (cat.rules || []).filter(r => r && String(r.desc || "").trim());
 			if(!rules.length) return;
 
 			catNo++;
 			s.push(`${catNo}. ${cat.title}`);
 
-			rules.forEach((r, idx)=>{
-				s.push(`  ${catNo}.${idx+1} 条款：${String(r.desc||"").trim()}`);
+			rules.forEach((r, idx) => {
+				s.push(`  ${catNo}.${idx + 1} 条款：${String(r.desc || "").trim()}`);
 
-				if(String(r.criteria||"").trim()){
+				if(String(r.criteria || "").trim()){
 					s.push(`      判定标准：${String(r.criteria).trim()}`);
 				}
 
-				const reviewCycle = String(r.reviewCycle||"").trim();
+				const reviewCycle = String(r.reviewCycle || "").trim();
 				const allowRemit = !!r.allowRemit;
 
 				if(reviewCycle || r.allowRemit !== undefined){
 					const a = reviewCycle ? `审查周期：${reviewCycle}` : "";
 					const b = `允许减免：${allowRemit ? "是" : "否"}`;
-					s.push(`      ${[a,b].filter(Boolean).join("；")}`);
+					s.push(`      ${[a, b].filter(Boolean).join("；")}`);
 				}
 
-				const tiers = (r.tiers || []).filter(t => t && String(t.text||"").trim());
+				const tiers = (r.tiers || []).filter(t => t && String(t.text || "").trim());
 				if(tiers.length){
-					s.push("      纠正梯度：");
-					tiers.forEach(t=>{
-						const lv = String(t.level||"").trim() || "档位";
-						const tx = String(t.text||"").trim();
+					s.push("      惩罚梯度：");
+					tiers.forEach(t => {
+						const lv = String(t.level || "").trim() || "档位";
+						const tx = String(t.text || "").trim();
 						s.push(`        - ${lv}：${tx}`);
 					});
 				}
@@ -136,14 +133,14 @@ function buildDocText(state){
 			s.push("");
 		});
 
-		while(s.length && s[s.length-1]==="") s.pop();
+		while(s.length && s[s.length - 1] === "") s.pop();
 
 		if(s.length){
-			sections.push({ title:"家规条款", lines:s });
+			sections.push({ title: "家规条款", lines: s });
 		}
 	}
 
-	
+	// 三、通用执行细则
 	{
 		const kit = state.kit || {};
 		const s = [];
@@ -154,35 +151,39 @@ function buildDocText(state){
 
 		if(methods.length){
 			s.push("通用方式/手段：");
-			methods.forEach((x,i)=> s.push(`  (${i+1}) ${x}`));
+			methods.forEach((x, i) => s.push(`  (${i + 1}) ${x}`));
 		}
+
 		if(nonPhysical.length){
-			s.push("非身体类纠正：");
-			nonPhysical.forEach((x,i)=> s.push(`  (${i+1}) ${x}`));
+			s.push("非身体类惩罚：");
+			nonPhysical.forEach((x, i) => s.push(`  (${i + 1}) ${x}`));
 		}
+
 		if(process){
 			s.push("通用流程：");
-			linesToArray(process).forEach(x=> s.push(`  ${x}`));
+			linesToArray(process).forEach(x => s.push(`  ${x}`));
 		}
 
 		if(s.length){
-			sections.push({ title:"通用执行细则", lines:s });
+			sections.push({ title: "通用执行细则", lines: s });
 		}
 	}
 
-	
+	// 四、奖励与正向强化
 	{
 		const s = [];
-		const rewards = (state.rewards || []).filter(r => r && String(r.when||"").trim() && String(r.then||"").trim());
-		rewards.forEach((rw,i)=>{
-			s.push(`${i+1}. 若 ${String(rw.when).trim()}，则 ${String(rw.then).trim()}`);
+		const rewards = (state.rewards || []).filter(r => r && String(r.when || "").trim() && String(r.then || "").trim());
+
+		rewards.forEach((rw, i) => {
+			s.push(`${i + 1}. 若 ${String(rw.when).trim()}，则 ${String(rw.then).trim()}`);
 		});
+
 		if(s.length){
-			sections.push({ title:"奖励与正向强化", lines:s });
+			sections.push({ title: "奖励与正向强化", lines: s });
 		}
 	}
 
-	
+	// 五、审查、修改与终止
 	{
 		const rv = state.review || {};
 		const s = [];
@@ -195,24 +196,23 @@ function buildDocText(state){
 		if(cycle) s.push(`审查周期：${cycle}`);
 		if(modify) s.push(`修改方式：${modify}`);
 		if(terminate) s.push(`终止条件：${terminate}`);
+
 		if(notes){
 			s.push("备注：");
-			linesToArray(notes).forEach(x=> s.push(`  ${x}`));
+			linesToArray(notes).forEach(x => s.push(`  ${x}`));
 		}
 
 		if(s.length){
-			sections.push({ title:"审查、修改与终止", lines:s });
+			sections.push({ title: "审查、修改与终止", lines: s });
 		}
 	}
 
-	
-	sections.forEach((sec, idx)=>{
-		lines.push(`${cnNum(idx+1)}、${sec.title}`);
-		sec.lines.forEach(l=> lines.push(l));
+	sections.forEach((sec, idx) => {
+		lines.push(`${cnNum(idx + 1)}、${sec.title}`);
+		sec.lines.forEach(l => lines.push(l));
 		lines.push("");
 	});
 
-	
 	lines.push("签署栏：");
 	if(mode === "solo"){
 		lines.push("签署：__________    日期：__________");
@@ -227,7 +227,6 @@ function wrapTextByWidth(rawLine, maxWidth, font, fontSize){
 	const line = String(rawLine || "");
 	if(!line) return [""];
 
-	
 	const m = line.match(/^(\s+)(.*)$/);
 	const indentStr = m ? m[1] : "";
 	const content = m ? m[2] : line;
@@ -250,8 +249,10 @@ function wrapTextByWidth(rawLine, maxWidth, font, fontSize){
 			break;
 		}
 
-		
-		let lo = 1, hi = s.length, best = 1;
+		let lo = 1;
+		let hi = s.length;
+		let best = 1;
+
 		while(lo <= hi){
 			const mid = (lo + hi) >> 1;
 			const candidate = indentStr + s.slice(0, mid);
@@ -265,12 +266,11 @@ function wrapTextByWidth(rawLine, maxWidth, font, fontSize){
 
 		let cut = best;
 
-		
 		const slice = s.slice(0, cut);
 		let breakAt = -1;
 		for(let i = slice.length - 1; i >= Math.max(0, slice.length - 24); i--){
 			if(preferBreakChars.includes(slice[i])){
-				breakAt = i + 1; 
+				breakAt = i + 1;
 				break;
 			}
 		}
@@ -288,7 +288,6 @@ function isSectionHeader(line){
 }
 
 function isSubHeader(line){
-	
 	return /^\d+\.\s+/.test(line.trim());
 }
 
@@ -296,13 +295,12 @@ function isLeadLine(line){
 	const t = line.trim();
 	if(!/：\s*$/.test(t)) return false;
 
-	
 	const keys = [
 		"硬性边界",
 		"关怀与复盘",
-		"纠正梯度",
+		"惩罚梯度",
 		"通用方式",
-		"非身体类纠正",
+		"非身体类惩罚",
 		"通用流程",
 		"备注",
 		"签署栏"
@@ -325,30 +323,25 @@ export async function makePdfBytes(state){
 	const font = await doc.embedFont(fontBytes, {});
 	const fontBold = await doc.embedFont(boldBytes, {});
 
-	const pageW = 595.28; 
+	const pageW = 595.28;
 	const pageH = 841.89;
 
-	
 	const marginX = 42;
 	const marginTop = 56;
 	const marginBottom = 54;
 
-	
 	const bodySize = 12;
 	const lineH = Math.round(bodySize * 1.6);
 
-	
-	const h1Size = 14;      
-	const h2Size = 12.5;    
+	const h1Size = 14;
+	const h2Size = 12.5;
 
-	
 	const ink = rgb(0.10, 0.12, 0.14);
 	const inkLight = rgb(0.35, 0.37, 0.40);
 
 	let page = doc.addPage([pageW, pageH]);
 	const pages = [page];
 
-	
 	const title = String(state.base?.title || "").trim() || "家规与自律协议";
 	const titleSize = 20;
 	const titleY = pageH - marginTop;
@@ -362,7 +355,6 @@ export async function makePdfBytes(state){
 		color: ink
 	});
 
-	
 	const dateLine = `（签订日期：${state.base?.date || ""}）`;
 	const dateSize = 10;
 	const dateW = font.widthOfTextAtSize(dateLine, dateSize);
@@ -374,7 +366,6 @@ export async function makePdfBytes(state){
 		color: inkLight
 	});
 
-	
 	let y = titleY - titleSize - 40;
 
 	function newPage(){
@@ -383,12 +374,6 @@ export async function makePdfBytes(state){
 		y = pageH - marginTop;
 	}
 
-	
-	
-	
-	
-	
-	
 	function keepNextCountFor(rawLine){
 		if(isSectionHeader(rawLine)) return 2;
 		if(isSubHeader(rawLine)) return 3;
@@ -414,8 +399,6 @@ export async function makePdfBytes(state){
 		const st = styleFor(rawLine);
 		const x = indentXFor(rawLine);
 		const maxW = pageW - x - marginX;
-
-		
 		return wrapTextByWidth(rawLine, maxW, st.font, st.size);
 	}
 
@@ -427,14 +410,12 @@ export async function makePdfBytes(state){
 		return Math.floor((y - marginBottom) / lineH);
 	}
 
-	
 	const text = buildDocText(state);
 	const rawLines = String(text || "").split("\n");
 
-	for(let i=0;i<rawLines.length;i++){
+	for(let i = 0; i < rawLines.length; i++){
 		const raw = rawLines[i];
 
-		
 		if(!raw.trim()){
 			if(y < marginBottom + lineH) newPage();
 			y -= lineH;
@@ -445,13 +426,12 @@ export async function makePdfBytes(state){
 		const wrapped = wrapForCurrentPage(raw);
 		const need = countLinesForWrapped(wrapped);
 
-		
 		let keepNeed = 0;
 		const keepNext = keepNextCountFor(raw);
 
 		if(keepNext > 0){
 			let got = 0;
-			for(let j=i+1; j<rawLines.length && got<keepNext; j++){
+			for(let j = i + 1; j < rawLines.length && got < keepNext; j++){
 				const nx = rawLines[j];
 				if(!nx.trim()) continue;
 
@@ -461,16 +441,13 @@ export async function makePdfBytes(state){
 			}
 		}
 
-		
 		if(remainingLinesOnPage() < (need + keepNeed)){
 			newPage();
 		}
 
-		
 		for(const wl of wrapped){
 			if(y < marginBottom + lineH) newPage();
 
-			
 			const mm = wl.match(/^(\s+)(.*)$/);
 			const spaces = mm ? mm[1].length : 0;
 			const level = Math.floor(spaces / 2);
@@ -488,10 +465,9 @@ export async function makePdfBytes(state){
 		}
 	}
 
-	
 	const pageNumSize = 9;
-	for(let p=0; p<pages.length; p++){
-		const label = `- ${p+1} -`;
+	for(let p = 0; p < pages.length; p++){
+		const label = `- ${p + 1} -`;
 		const w = font.widthOfTextAtSize(label, pageNumSize);
 		pages[p].drawText(label, {
 			x: (pageW - w) / 2,
