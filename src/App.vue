@@ -1,19 +1,16 @@
 <template>
   <div class="container">
-    <div class="header">
+    <div class="workbench">
+      <aside class="sideInfo sideLeft">
       <div class="brand">
         <div class="title">House Rules Builder</div>
         <div class="subtitle">
           多步向导填写条款，生成规范化纯文字文书（段落 + 编号），并导出 PDF。
         </div>
       </div>
-      <div class="badgeRow">
-        <div class="badge">进度：<b>{{ active + 1 }}</b>/{{ stepLabels.length }}</div>
-        <div class="badge">草稿：<b>{{ hasDraft ? "存在" : "无" }}</b></div>
-      </div>
-    </div>
+      </aside>
 
-    <div class="mainGrid">
+      <div class="mainGrid">
       <!-- 左侧：向导表单 -->
       <div class="panel">
         <div class="panelHead">
@@ -49,7 +46,11 @@
               <el-button type="primary" @click="next" :disabled="active===stepLabels.length-1">下一步</el-button>
             </div>
             <div class="navRight">
-              <el-button @click="previewPdf">预览 PDF</el-button>
+              <template v-if="isDesktop">
+                <el-button @click="previewInlinePdf">右侧实时预览</el-button>
+                <el-button @click="previewBrowserPdf">浏览器预览</el-button>
+              </template>
+              <el-button v-else @click="previewBrowserPdf">预览 PDF</el-button>
             </div>
           </div>
 
@@ -197,7 +198,25 @@
             
             <div v-if="state.categories.length" class="catList">
               <div v-for="(c,idx) in state.categories" :key="c.id" class="catItem" :class="{active: activeCatIndex===idx}" @click="selectCategory(idx)">
-                <div class="t1">{{ c.title }}</div>
+                <div class="catTitleRow">
+                  <template v-if="editingCatIndex===idx">
+                    <input
+                      ref="catTitleInputRef"
+                      v-model="editingCatTitle"
+                      class="catTitleInput"
+                      :style="{ width: catTitleInputWidth }"
+                      maxlength="15"
+                      @click.stop
+                      @input="onEditCategoryInput"
+                      @keydown.enter.prevent="finishEditCategory"
+                      @blur="finishEditCategory"
+                    />
+                  </template>
+                  <template v-else>
+                    <div class="t1">{{ c.title }}</div>
+                    <button class="editPen" title="编辑类别名" @click.stop="startEditCategory(idx)">✎</button>
+                  </template>
+                </div>
                 <div class="t2">条款：{{ c.rules.length }} 条</div>
                 <button class="delCircle" title="删除类别" @click.stop="removeCategory(idx)">×</button>
               </div>
@@ -312,13 +331,39 @@
 
           <!-- Step 6 -->
           <section v-show="active===7">
-            <h3 class="stepTitle">步骤 8  预览与导出</h3>
-            <p class="stepHint">右侧为 PDF 预览。生成后可下载 PDF，或导出 JSON 备份。</p>
+            <h3 class="stepTitle">步骤 8  下载导出/文本微调</h3>
+            <p class="stepHint">此处可修改 5 个大类标题；可下载 PDF 或导出 JSON 备份。</p>
+
+            <div class="subBlock">
+              <div>
+                <div class="subTitle">文书大类标题（可编辑）</div>
+                <div class="subHint">修改后将同步用于 PDF 的 5 个章节标题。</div>
+              </div>
+              <div class="titleGrid">
+                <el-form-item label="大类 1（原则与安全）">
+                  <el-input v-model="state.sectionTitles.principles" placeholder="例如：原则与安全"></el-input>
+                </el-form-item>
+                <el-form-item label="大类 2（家规条款）">
+                  <el-input v-model="state.sectionTitles.rules" placeholder="例如：家规条款"></el-input>
+                </el-form-item>
+                <el-form-item label="大类 3（通用执行细则）">
+                  <el-input v-model="state.sectionTitles.execution" placeholder="例如：通用执行细则"></el-input>
+                </el-form-item>
+                <el-form-item label="大类 4（奖励与正向强化）">
+                  <el-input v-model="state.sectionTitles.rewards" placeholder="例如：奖励与正向强化"></el-input>
+                </el-form-item>
+                <el-form-item label="大类 5（审查、修改与终止）">
+                  <el-input v-model="state.sectionTitles.review" placeholder="例如：审查、修改与终止"></el-input>
+                </el-form-item>
+              </div>
+            </div>
 
             <div class="toolbar">
-              <el-button type="primary" @click="buildPdf">生成/刷新 PDF</el-button>
               <el-button :disabled="!pdfUrl" @click="downloadPdf">下载 PDF</el-button>
               <el-button @click="exportJson">导出 JSON</el-button>
+            </div>
+            <div class="stepHint">
+              Tips：手机端如果点不了“下载 PDF”，通常是还没预览过。先点“预览 PDF”跳转到预览页面审查一下，再返回本页即可下载。
             </div>
 
             <div class="noteBox">
@@ -329,47 +374,70 @@
       </div>
 
       <!-- 右侧：PDF预览 -->
-      <div class="panel rightSticky" ref="previewPanelRef">
+      <div class="panel rightSticky" ref="previewPanelRef" v-show="isDesktop">
         <div class="panelHead">
           <div class="h">
-            文书预览
-            <small>生成后可翻页预览。</small>
+            <div class="previewTitleRow">
+              <span class="docTitle">{{ state.base.title || "文书预览" }}</span>
+              <span class="seal">预览件</span>
+            </div>
           </div>
-          <div class="pageTag" v-if="pdfUrl">
-            第 <b>{{ pageNum }}</b> / {{ pageCount }} 页
+          <div class="previewHeadRight">
+            <div class="zoomTools">
+              <button class="zoomDot" :class="{on: previewMode==='single'}" title="单页预览" @click="previewMode='single'">▢</button>
+              <button class="zoomDot" :class="{on: previewMode==='all'}" title="全文滚动" @click="previewMode='all'">▤</button>
+            </div>
+            <div class="pageTag" v-if="pdfUrl">
+              <template v-if="previewMode==='single'">第 <b>{{ pageNum }}</b> / {{ pageCount }} 页</template>
+              <template v-else>全文模式 · {{ pageCount }} 页</template>
+            </div>
           </div>
         </div>
-        <div class="panelBody">
-          <div class="paper">
-            <div class="paperHead">
-              <div class="docTitle">{{ state.base.title || "文书预览" }}</div>
-              <div class="seal">预览件</div>
-            </div>
-            <div class="paperHr"></div>
-
+        <div class="panelBody previewPanelBody">
+          <div class="previewViewport">
             <PdfPreview
               :pdfUrl="pdfUrl"
               :pageNum="pageNum"
+              :viewMode="previewMode"
+              :zoomScale="previewZoom"
+              :zoomMode="previewZoomMode"
               @loaded="onPdfLoaded"
               @rendered="onPdfRendered"
               class="previewBox"
+              :class="{ allMode: previewMode==='all' }"
             />
-
-            <div class="paperHr"></div>
-
-            <div class="paperPager">
-              <el-button size="small" @click="prevPage" :disabled="!pdfUrl || pageNum<=1">上一页</el-button>
-              <el-button size="small" @click="nextPage" :disabled="!pdfUrl || pageNum>=pageCount">下一页</el-button>
-            </div>
           </div>
 
-          <div style="height:10px"></div>
+          <div class="paperHr"></div>
 
-          <div class="paperTip">
-            建议打印：A4 单面，留出签名栏空白位置。
+          <div class="paperPager" v-if="previewMode==='single'">
+            <el-button size="small" @click="prevPage" :disabled="!pdfUrl || pageNum<=1">上一页</el-button>
+            <div class="pagerCenter">
+              <input
+                v-model="jumpPageText"
+                class="pageJumpInput"
+                :disabled="!pdfUrl"
+                @keydown.enter.prevent="applyJumpPage"
+                @blur="applyJumpPage"
+              />
+              <span>/ {{ pageCount }}</span>
+            </div>
+            <el-button size="small" @click="nextPage" :disabled="!pdfUrl || pageNum>=pageCount">下一页</el-button>
+          </div>
+          <div class="paperPager" v-else>
+            <span class="t2">上下滚动查看全文</span>
+            <el-button size="small" @click="scrollPreviewTop">回到顶部</el-button>
           </div>
         </div>
       </div>
+      </div>
+
+      <aside class="sideInfo sideRight">
+        <div class="badgeRow">
+          <div class="badge">进度：<b>{{ active + 1 }}</b>/{{ stepLabels.length }}</div>
+          <div class="badge">草稿：<b>{{ hasDraft ? "存在" : "无" }}</b></div>
+        </div>
+      </aside>
     </div>
 
     <!-- dialogs -->
@@ -483,9 +551,32 @@ function linesToArray(s){
 }
 
 const DRAFT_KEY = "rules_docgen_draft_v1";
+const SECTION_TITLE_DEFAULTS = Object.freeze({
+  principles: "原则与安全",
+  rules: "家规条款",
+  execution: "通用执行细则",
+  rewards: "奖励与正向强化",
+  review: "审查、修改与终止"
+});
+
+function normalizeSectionTitles(input){
+  const src = input && typeof input === "object" ? input : {};
+  const take = (key)=>{
+    const val = String(src[key] ?? "").trim();
+    return val || SECTION_TITLE_DEFAULTS[key];
+  };
+  return {
+    principles: take("principles"),
+    rules: take("rules"),
+    execution: take("execution"),
+    rewards: take("rewards"),
+    review: take("review")
+  };
+}
 
 const SAMPLE_STATE = {
   mode: "together",
+  sectionTitles: normalizeSectionTitles(),
   base: {
     title: "House Rules Builder - Official Sample",
     date: todayStr(),
@@ -602,7 +693,7 @@ const stepLabels = [
   "主体条款",
   "奖励",
   "审查终止",
-  "预览导出"
+  "下载导出/文本微调"
 ];
 
 const baseRef = ref(null);
@@ -669,6 +760,7 @@ function appendTierText(t, v){
 
 const state = reactive({
   mode: "solo",
+  sectionTitles: normalizeSectionTitles(),
   base: {
     title: "家规与自律协议",
     date: todayStr(),
@@ -738,6 +830,14 @@ const totalRules = computed(()=> state.categories.reduce((sum,c)=> sum + (c.rule
 const hasDraft = computed(()=> !!getDraft(DRAFT_KEY));
 
 const activeCatIndex = ref(0);
+const editingCatIndex = ref(-1);
+const editingCatTitle = ref("");
+const catTitleInputRef = ref(null);
+const catTitleInputWidth = computed(()=>{
+  const len = String(editingCatTitle.value || "").length;
+  const visualLen = Math.min(15, Math.max(4, len || 1));
+  return `${visualLen * 1.2 + 1.5}em`;
+});
 
 const catDialog = reactive({ visible:false, form:{ title:"" } });
 function openCatDialog(){
@@ -754,11 +854,41 @@ function confirmAddCategory(){
   ElMessage.success("已新增类别");
 }
 function removeCategory(i){
+  if(editingCatIndex.value === i){
+    editingCatIndex.value = -1;
+    editingCatTitle.value = "";
+  }else if(editingCatIndex.value > i){
+    editingCatIndex.value -= 1;
+  }
   state.categories.splice(i,1);
   activeCatIndex.value = state.categories.length ? Math.min(activeCatIndex.value, state.categories.length-1) : -1;
   ElMessage.success("已删除类别");
 }
 function selectCategory(i){ activeCatIndex.value = i; }
+async function startEditCategory(i){
+  editingCatIndex.value = i;
+  editingCatTitle.value = String(state.categories[i]?.title || "");
+  await nextTick();
+  const input = catTitleInputRef.value;
+  input?.focus?.();
+  input?.select?.();
+}
+function onEditCategoryInput(e){
+  const val = String(e?.target?.value ?? editingCatTitle.value ?? "");
+  if(val.length > 15){
+    editingCatTitle.value = val.slice(0, 15);
+  }
+}
+function finishEditCategory(){
+  const i = editingCatIndex.value;
+  if(i < 0 || !state.categories[i]) return;
+  const val = editingCatTitle.value.trim().slice(0, 15);
+  if(val){
+    state.categories[i].title = val;
+  }
+  editingCatIndex.value = -1;
+  editingCatTitle.value = "";
+}
 function useCategoryTemplates(){
   const preset = ["健康与生活习惯","礼貌与态度","诚实与承诺","家务与卫生","设备与网络使用"];
   const existed = new Set(state.categories.map(c=>c.title));
@@ -870,12 +1000,38 @@ let pdfBytesCache = null;
 
 const pageNum = ref(1);
 const pageCount = ref(1);
+const previewMode = ref("single"); // single | all
+const previewZoom = ref(1.25);
+const previewZoomMode = ref("manual"); // manual | fit-width | fit-page
+const jumpPageText = ref("1");
 
 function onPdfLoaded(meta){
   pageCount.value = meta.pageCount;
   pageNum.value = 1;
+  jumpPageText.value = "1";
 }
 function onPdfRendered(){}
+watch(pageNum, (v)=>{ jumpPageText.value = String(v); });
+watch(previewMode, (mode)=>{
+  if(mode === "single"){
+    // 单页默认整页展示，快速总览；清晰度由高分屏渲染保证
+    previewZoomMode.value = "fit-page";
+  }else{
+    // 连续模式适宽，阅读更流畅
+    previewZoomMode.value = "fit-width";
+  }
+}, { immediate: true });
+function applyJumpPage(){
+  if(!pdfUrl.value) return;
+  const raw = String(jumpPageText.value || "").replace(/[^\d]/g, "");
+  const n = Math.min(pageCount.value, Math.max(1, Number(raw || pageNum.value)));
+  pageNum.value = n;
+  jumpPageText.value = String(n);
+}
+function scrollPreviewTop(){
+  const el = document.querySelector(".previewViewport");
+  el?.scrollTo?.({ top: 0, behavior: "smooth" });
+}
 
 async function buildPdf(opts = {}){
   const strict = opts.strict !== false; // default true
@@ -909,16 +1065,43 @@ async function buildPdf(opts = {}){
 const previewPanelRef = ref(null);
 
 async function previewPdf(){
+  // 兼容旧调用
+  return previewBrowserPdf();
+}
+
+function openPdfInBrowser(){
+  const opened = window.open(pdfUrl.value, "_blank");
+  if(!opened){
+    const a = document.createElement("a");
+    a.href = pdfUrl.value;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.click();
+  }
+}
+
+async function previewInlinePdf(){
   const ok = await buildPdf({ strict:false, toast:false });
   if(!ok) return;
+  track("preview_pdf_inline");
+}
 
-  track("preview_pdf");
-
-  // 手机端：点预览就滚到预览区
+async function previewBrowserPdf(){
   if(!isDesktop.value){
-    await nextTick();
-    previewPanelRef.value?.scrollIntoView?.({ behavior:"smooth", block:"start" });
+    previewMode.value = "single";
+    previewZoomMode.value = "fit-page";
+    ElMessage.info("正在生成预览...");
+    const ok = await buildPdf({ strict:false, toast:true });
+    if(!ok) return;
+    track("preview_pdf_browser_mobile");
+    openPdfInBrowser();
+    return;
   }
+
+  const ok = await buildPdf({ strict:false, toast:true });
+  if(!ok) return;
+  track("preview_pdf_browser_desktop");
+  openPdfInBrowser();
 }
 
 // 桌面端：所改即所得（停 500ms 自动刷新预览）
@@ -990,6 +1173,13 @@ async function next(){
 }
 function prev(){ if(active.value>0) active.value--; }
 // draft/export
+function applyLoadedState(obj){
+  Object.assign(state, obj || {});
+  state.sectionTitles = normalizeSectionTitles(state.sectionTitles);
+  if(!Array.isArray(state.categories)) state.categories = [];
+  activeCatIndex.value = state.categories.length ? 0 : -1;
+}
+
 function saveDraft(){
   setDraft(DRAFT_KEY, JSON.parse(JSON.stringify(state)));
   track("save_draft");
@@ -998,8 +1188,7 @@ function saveDraft(){
 function loadDraft(){
   const obj = getDraft(DRAFT_KEY);
   if(!obj){ ElMessage.warning("没有找到草稿"); return; }
-  Object.assign(state, obj);
-  activeCatIndex.value = state.categories.length ? 0 : -1;
+  applyLoadedState(obj);
   track("load_draft");
   ElMessage.success("草稿已加载");
 }
@@ -1023,8 +1212,7 @@ async function loadExample(){
   }
 
   const obj = JSON.parse(JSON.stringify(SAMPLE_STATE));
-  Object.assign(state, obj);
-  activeCatIndex.value = state.categories.length ? 0 : -1;
+  applyLoadedState(obj);
   await nextTick();
   if(isDesktop.value){
     buildPdf({ strict:false, toast:false });
@@ -1041,8 +1229,7 @@ async function importJson(){
     try{
       const txt = await file.text();
       const obj = JSON.parse(txt);
-      Object.assign(state, obj);
-      activeCatIndex.value = state.categories.length ? 0 : -1;
+      applyLoadedState(obj);
       ElMessage.success("已导入 JSON");
     }catch(e){
       console.error(e);
@@ -1058,6 +1245,7 @@ function exportJson(){
 }
 
 onMounted(()=>{
+  state.sectionTitles = normalizeSectionTitles(state.sectionTitles);
   activeCatIndex.value = state.categories.length ? 0 : -1;
 });
 </script>
@@ -1096,6 +1284,65 @@ onMounted(()=>{
 .subHead{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
 .subTitle{ font-weight: 800; letter-spacing:.2px; }
 .subHint{ color: grey; font-size: 12px; margin-top: 4px; }
+.previewTitleRow{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.previewHeadRight{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.zoomTools{
+  display: flex;
+  gap: 6px;
+}
+.zoomDot{
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(148,163,184,.55);
+  background: rgba(148,163,184,.12);
+  color: #334155;
+  font-size: 12px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.zoomDot:hover{
+  border-color: rgba(37,99,235,.55);
+  background: rgba(37,99,235,.12);
+  color: #1d4ed8;
+}
+.zoomDot.on{
+  border-color: rgba(37,99,235,.65);
+  background: rgba(37,99,235,.16);
+  color: #1d4ed8;
+}
+.docTitle{
+  font-family: var(--serif);
+  font-weight: 850;
+  letter-spacing: .4px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.seal{
+  color: var(--red);
+  border: 1px solid rgba(139,30,30,.35);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
+}
 .emptyHint{
   color: grey;
   font-size: 12px;
@@ -1120,6 +1367,14 @@ onMounted(()=>{
   color: grey;
 }
 .tierT{ color: grey; }
+.titleGrid{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 680px){
+  .titleGrid{ grid-template-columns: 1fr; }
+}
 .noteBox{
   margin-top: 10px;
   padding: 10px 12px;
@@ -1131,14 +1386,75 @@ onMounted(()=>{
   line-height: 1.6;
 }
 .navRow{ display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; }
-.paperPager{ display:flex; justify-content:space-between; gap:10px; padding: 10px 12px; }
+.paperPager{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding: 10px 12px; }
+.pagerCenter{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #475569;
+  font-size: 12px;
+}
+.pageJumpInput{
+  width: 54px;
+  border: 1px solid rgba(148,163,184,.55);
+  border-radius: 8px;
+  padding: 4px 6px;
+  font-size: 12px;
+  text-align: center;
+  outline: none;
+}
+.pageJumpInput:focus{
+  border-color: rgba(37,99,235,.7);
+  box-shadow: 0 0 0 2px rgba(37,99,235,.15);
+}
 .paperTip{
   color: grey;
   font-size: 12px;
   line-height: 1.6;
 }
 .pageTag{ color: grey; font-size: 12px; }
-.previewBox{ padding: 8px 12px 12px; }
+.previewPanelBody{
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.previewViewport{
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 8px 12px;
+}
+.previewBox{ min-height: 100%; }
+@media (max-width: 980px){
+  .previewHeadRight{
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .previewPanelBody{
+    display: block;
+    overflow: visible;
+  }
+  .previewViewport{
+    min-height: 320px;
+    max-height: none;
+    overflow: visible;
+    padding: 8px 8px 10px;
+  }
+}
+@media (max-width: 560px){
+  .pageTag{
+    width: 100%;
+  }
+  .paperPager{
+    flex-wrap: wrap;
+  }
+  .pagerCenter{
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+}
 .tierHead{ font-weight: 800; margin: 6px 0 10px; }
 .tierCard{
   padding: 10px;
@@ -1207,6 +1523,41 @@ onMounted(()=>{
 .catItem.active{
   border-color: rgba(0,0,0,.35);
   box-shadow: 0 1px 10px rgba(0,0,0,.06);
+}
+.catTitleRow{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.editPen{
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+.editPen:hover{
+  color: #2563eb;
+  background: rgba(37,99,235,.1);
+}
+.catTitleInput{
+  display: inline-block;
+  border: none;
+  border-bottom: 1px solid #94a3b8;
+  background: transparent;
+  outline: none;
+  font-size: 14px;
+  font-weight: 750;
+  color: #0f172a;
+  padding: 2px 0;
+}
+.catTitleInput:focus{
+  border-bottom-color: #2563eb;
+  box-shadow: 0 1px 0 #2563eb;
 }
 .delCircle{
   position:absolute;

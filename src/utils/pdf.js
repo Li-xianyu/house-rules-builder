@@ -46,8 +46,32 @@ function cnNum(n){
 	return map[tens] + "十" + (ones ? map[ones] : "");
 }
 
+const SECTION_TITLE_DEFAULTS = Object.freeze({
+	principles: "原则与安全",
+	rules: "家规条款",
+	execution: "通用执行细则",
+	rewards: "奖励与正向强化",
+	review: "审查、修改与终止"
+});
+
+function normalizeSectionTitles(input){
+	const src = input && typeof input === "object" ? input : {};
+	const take = (key)=>{
+		const val = String(src[key] ?? "").trim();
+		return val || SECTION_TITLE_DEFAULTS[key];
+	};
+	return {
+		principles: take("principles"),
+		rules: take("rules"),
+		execution: take("execution"),
+		rewards: take("rewards"),
+		review: take("review")
+	};
+}
+
 function buildDocText(state){
 	const mode = String(state.mode || "solo");
+	const sectionTitles = normalizeSectionTitles(state.sectionTitles);
 	const A = String(state.base?.partyA || "").trim() || "甲方";
 	const B = String(state.base?.partyB || "").trim() || "乙方";
 	const labelA = (mode === "solo") ? "监督方" : "甲方";
@@ -87,7 +111,7 @@ function buildDocText(state){
 		}
 
 		if(s.length){
-			sections.push({ title: "原则与安全", lines: s });
+			sections.push({ title: sectionTitles.principles, lines: s });
 		}
 	}
 
@@ -136,7 +160,7 @@ function buildDocText(state){
 		while(s.length && s[s.length - 1] === "") s.pop();
 
 		if(s.length){
-			sections.push({ title: "家规条款", lines: s });
+			sections.push({ title: sectionTitles.rules, lines: s });
 		}
 	}
 
@@ -165,7 +189,7 @@ function buildDocText(state){
 		}
 
 		if(s.length){
-			sections.push({ title: "通用执行细则", lines: s });
+			sections.push({ title: sectionTitles.execution, lines: s });
 		}
 	}
 
@@ -179,7 +203,7 @@ function buildDocText(state){
 		});
 
 		if(s.length){
-			sections.push({ title: "奖励与正向强化", lines: s });
+			sections.push({ title: sectionTitles.rewards, lines: s });
 		}
 	}
 
@@ -203,7 +227,7 @@ function buildDocText(state){
 		}
 
 		if(s.length){
-			sections.push({ title: "审查、修改与终止", lines: s });
+			sections.push({ title: sectionTitles.review, lines: s });
 		}
 	}
 

@@ -22,23 +22,31 @@ body{
   background: var(--bg);
   font-family: var(--sans);
   color: var(--ink);
+  overflow-x: hidden;
 }
 
 a{ color:inherit; text-decoration:none; }
 
 .container{
-  max-width: 1240px;
+  max-width: 1500px;
   margin: 0 auto;
   padding: 18px 14px 26px;
 }
 
-.header{
-  display:flex;
-  align-items:flex-end;
-  justify-content:space-between;
-  gap:12px;
-  margin: 4px 0 14px;
+.workbench{
+  display: grid;
+  grid-template-columns: 220px minmax(0,1fr) 170px;
+  gap: 14px;
+  align-items: start;
+  height: 100%;
 }
+
+.sideInfo{
+  position: sticky;
+  top: 12px;
+}
+.sideLeft{ text-align: left; }
+.sideRight{ text-align: right; }
 
 .brand{
   display:flex;
@@ -79,8 +87,28 @@ a{ color:inherit; text-decoration:none; }
   grid-template-columns: 1.08fr .92fr;
   gap: 14px;
 }
+.mainGrid > *{
+  min-width: 0;
+}
+@media (max-width: 1280px){
+  .workbench{
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .sideInfo{
+    position: static;
+  }
+  .sideRight{
+    text-align: left;
+  }
+  .badgeRow{
+    justify-content: flex-start;
+  }
+}
 @media (max-width: 980px){
   .mainGrid{ grid-template-columns: 1fr; }
+  .container{ padding: 10px 10px 16px; }
+  .sideInfo{ display: none; }
 }
 
 .panel{
@@ -104,6 +132,7 @@ a{ color:inherit; text-decoration:none; }
 .panelHead .h{
   font-weight: 760;
   letter-spacing:.2px;
+  min-width: 0;
 }
 .panelHead .h small{
   display:block;
@@ -152,11 +181,57 @@ a{ color:inherit; text-decoration:none; }
 .rightSticky{
   position: sticky;
   top: 12px;
-  height: calc(100dvh - 26px);
-  overflow:auto;
+  align-self: start;
+  height: auto;
+  overflow: visible;
+  width: 100%;
 }
 @media (max-width: 980px){
   .rightSticky{ position: static; height: auto; }
+}
+
+/* Desktop: lock viewport height, scroll inside each panel instead of whole page */
+@media (min-width: 981px){
+  html, body, #app{
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .container{
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    padding: 8px 12px 10px;
+  }
+
+  .workbench{
+    flex: 1;
+    min-height: 0;
+  }
+
+  .mainGrid{
+    min-height: 0;
+    height: 100%;
+  }
+
+  .panel{
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .panelBody{
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .rightSticky{
+    position: static;
+    top: auto;
+    align-self: stretch;
+    height: 100%;
+  }
 }
 
 /* Element Plus：白底公文风（提高可读性） */
